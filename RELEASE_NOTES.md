@@ -1,5 +1,11 @@
 # 基于 Debian / PVE 博通 LSA 控制器工具 v0.1.03
 
+> **非官方第三方工具**，与 Broadcom Inc. 无隶属关系，未获其授权或赞助。
+> Broadcom、LSI、MegaRAID、LSI Storage Authority 是 Broadcom Inc. 的商标或注册商标。
+>
+> **本项目不含任何 Broadcom 二进制。** LSA 安装包（`*_LSA_Linux.zip`）属 Broadcom 专有软件，
+> 需**用户自备**并从 Broadcom / 服务器厂商渠道获取；本仓库与 Release 只分发安装脚本与源码。
+
 在 PVE（Debian 11/12）宿主机上装出一套可视化的 Broadcom LSI Storage Authority，
 浏览器打开 `http://<PVE地址>:2463` 就能看 MegaRAID 阵列状态。不需要 storcli，
 不装 Docker，不重启宿主机，也不动你系统的软件包。
@@ -27,3 +33,5 @@ LSA 安装包需自备（Broadcom 专有，不随本项目分发），`doctor` �
 - 尚未在真实 PVE 上完成端到端安装验证（开发环境为 Debian 12 构建机）
 - 只读组 `readonly_access_groups` 是否真拦写操作未验证
 - 依赖 LSA 安装包内含 `gcc_8.3.x` 基线（无 AVX 的虚拟 CPU 只能用它）
+
+> 姊妹项目：fnOS 应用的 fpk 安装包见 [LSI-Storage-Fnos v0.1.03](https://github.com/a10463981/LSI-Storage-Fnos/releases/tag/v0.1.03)。
