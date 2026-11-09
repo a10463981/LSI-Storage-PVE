@@ -13,7 +13,7 @@ SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJ=$(cd "$SELF_DIR/.." && pwd)
 cd "$PROJ"
 
-VERSION=$(cat CORE_VERSION 2>/dev/null || echo "0.0.0")
+VERSION=$(cat VERSION 2>/dev/null || cat CORE_VERSION 2>/dev/null || echo "0.0.0")
 NAME="LSI-Storage-PVE-$VERSION"
 DIST="$PROJ/dist"
 
@@ -42,9 +42,10 @@ fi
 
 # ---------- 校验 2：必需文件 ----------
 required=(
-  README.md README.en.md LICENSE CORE_VERSION UPSTREAM
+  README.md README.en.md LICENSE CORE_VERSION VERSION UPSTREAM
   installer/install.sh installer/systemd/lsa-pve.service.in
   vendor/core/CORE_SHA256
+  payload/rootfs.tar.gz payload/rootfs.sha256 payload/PAYLOAD_INFO
 )
 for f in "${required[@]}"; do
   [ -e "$f" ] || die "仓库不完整，缺少：$f"
@@ -69,9 +70,10 @@ mkdir -p "$STAGE"
 
 cp -a installer "$STAGE/"
 cp -a vendor    "$STAGE/"
+cp -a payload   "$STAGE/"
 mkdir -p "$STAGE/scripts"
 cp -a scripts/sync-core.sh "$STAGE/scripts/"
-cp -a README.md README.en.md LICENSE CORE_VERSION UPSTREAM RELEASE_NOTES.md "$STAGE/" 2>/dev/null || true
+cp -a README.md README.en.md LICENSE CORE_VERSION VERSION UPSTREAM RELEASE_NOTES.md "$STAGE/" 2>/dev/null || true
 
 # 不把 .git 与缓存带进去
 find "$STAGE" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true

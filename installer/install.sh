@@ -62,7 +62,8 @@ usage() {
   repair                白名单修复（符号链接/残留挂载/pid/重装单元/重启）
 
 选项：
-  --lsa-package <路径|URL>   LSA 安装包（zip）。install / upgrade 必需
+  --lsa-package <路径|URL>   高级：自备 LSA 包从源码现装（需联网）；不填则用发行包内
+                             的预构建环境（离线，推荐）
   --rootfs-file <路径>       本地 ubuntu-base rootfs（离线安装用）
   --port <N>                 对外端口，默认 2463
   --backend-port <N>         LSA 后端端口，默认 9000
@@ -130,6 +131,8 @@ RFS="$PREFIX/rootfs"
 . "$INSTALLER/lib/preflight.sh"
 # shellcheck source=lib/fetch.sh
 . "$INSTALLER/lib/fetch.sh"
+# shellcheck source=lib/payload.sh
+. "$INSTALLER/lib/payload.sh"
 # shellcheck source=lib/chroot.sh
 . "$INSTALLER/lib/chroot.sh"
 # shellcheck source=lib/patch.sh

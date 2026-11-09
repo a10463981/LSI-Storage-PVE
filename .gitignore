@@ -16,3 +16,4 @@ release/
 # 测试与临时
 tmp/
 *.log
+payload/

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # commands/install.sh — 全新安装
 #
-# 每一步都能独立重试：已下载的制品在 $STATE 复用，已解包的 rootfs 在
-# --force 之外不会重复解。失败时 trap 回滚到"干净"状态。
+# 两条路径：
+#   默认（payload）  解包预构建 rootfs → 改端口 → 起服务。离线、1–2 分钟。
+#   高级（--lsa-package）  从 Ubuntu base 现装 + chroot 内 apt + dpkg，需要网络。
+#
+# 每一步都能独立重试；失败时 trap 回滚到干净状态。
 
 install_main() {
   req_root "$@"
-  STEP_TOTAL=9
 
-  # 已装则拒绝
   if [ -d "$RFS" ] && [ -f "$RFS/etc/init.d/LsiSASH" ] && [ "${FORCE:-0}" != "1" ]; then
     die "看起来已安装（$RFS 存在且含 LsiSASH）。升级请用：$0 upgrade ；强制重装加 --force"
   fi
@@ -21,6 +22,7 @@ install_main() {
         fi' EXIT
 
   # ---------- 1 预检 ----------
+  if [ -n "${LSA_PACKAGE:-}" ]; then STEP_TOTAL=9; else STEP_TOTAL=6; fi
   step "预检"
   [ -d /run/systemd/system ] || die "systemd 未运行，无法安装"
   in_container && die "检测到容器环境，拒绝安装（宿主的 systemd 服务在容器里没有意义）"
@@ -37,49 +39,79 @@ install_main() {
   have tar || die "缺少 tar"
   megaraid_present || warn "未检测到 MegaRAID 卡：可以继续安装，界面里将是空列表"
 
-  if [ -z "${LSA_PACKAGE:-}" ]; then
-    err "缺少 --lsa-package"
-    lsa_guidance
-    exit 2
+  if [ -n "${LSA_PACKAGE:-}" ]; then
+    install_from_source
+  else
+    install_from_payload
   fi
+}
 
-  # ---------- 2 取 rootfs ----------
-  step "准备 Ubuntu rootfs"
-  fetch_rootfs
+# ==================== 默认路径：预构建 payload ====================
+install_from_payload() {
+  step "检查发行包内的运行环境"
+  payload_locate
+  payload_verify
+  payload_show_info
 
-  # ---------- 3 取 LSA 包 ----------
-  step "准备 LSA 安装包"
-  fetch_lsa
+  step "解包预构建 rootfs（不联网、不执行 apt）"
+  payload_unpack
 
-  # ---------- 4 建 chroot ----------
-  step "建立 chroot 运行环境"
-  rfs_create
-  rfs_set_apt_sources
+  step "按参数写入端口并校验链接"
+  rfs_apply_ports
+  rfs_verify_links
 
-  # ---------- 5 chroot 内装依赖 ----------
-  step "在 chroot 内安装运行期依赖"
-  say "（这是 Ubuntu 24.04 的独立根文件系统，宿主的 apt 完全没被使用）"
-  rfs_install_deps
-
-  # ---------- 6 装 LSA ----------
-  step "在 chroot 内安装 LSA"
-  rfs_install_lsa
-
-  # ---------- 7 打补丁 ----------
-  step "应用兼容性补丁"
-  rfs_patch_all
-
-  # ---------- 8 装 unit ----------
   step "安装 systemd 服务"
   write_config
   unit_install
 
-  # ---------- 9 启动 + 健康检查 ----------
   step "启动并等待就绪"
   unit_start
   ROLLBACK=0
   if [ "$DRY_RUN" = "1" ]; then
     say "[dry-run] 跳过就绪等待（真机会轮询 http://127.0.0.1:$PORT/ 直到 200）"
+    trap - EXIT
+    print_success
+    return 0
+  fi
+  if ! wait_ready; then
+    err "服务已安装但未就绪，保留现场以便排查（可用 $0 status / repair）"
+    exit 1
+  fi
+  trap - EXIT
+  print_success
+}
+
+# ==================== 高级路径：自备 LSA 包现装 ====================
+install_from_source() {
+  step "准备 Ubuntu rootfs（需要网络）"
+  fetch_rootfs
+
+  step "准备 LSA 安装包"
+  fetch_lsa
+
+  step "建立 chroot 运行环境"
+  rfs_create
+  rfs_set_apt_sources
+
+  step "在 chroot 内安装运行期依赖"
+  say "（这是 Ubuntu 24.04 的独立根文件系统，宿主的 apt 完全没被使用）"
+  rfs_install_deps
+
+  step "在 chroot 内安装 LSA"
+  rfs_install_lsa
+
+  step "应用兼容性补丁"
+  rfs_patch_all
+
+  step "安装 systemd 服务"
+  write_config
+  unit_install
+
+  step "启动并等待就绪"
+  unit_start
+  ROLLBACK=0
+  if [ "$DRY_RUN" = "1" ]; then
+    say "[dry-run] 跳过就绪等待"
     trap - EXIT
     print_success
     return 0
@@ -102,6 +134,7 @@ PREFIX=$PREFIX
 PORT=$PORT
 BACKEND_PORT=$BACKEND_PORT
 LSA_BASELINE=${LSA_BASELINE:-gcc_8.3.x}
+INSTALL_MODE=${INSTALL_MODE:-payload}
 INSTALLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
   chmod 644 "$CONF"
@@ -117,7 +150,7 @@ ${C_OK}安装完成${C_OFF}
   本机地址   http://127.0.0.1:${PORT}
   安装前缀   ${PREFIX}
   服务名     lsa-pve.service
-  日志       ${LOG_FILE}
+  日志       ${LOG_FILE:-（未启用）}
 
   登录：LSA 需要系统账号。默认预置了 lsiadmin（锁定态），设置口令后即可登录：
 

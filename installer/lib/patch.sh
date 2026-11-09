@@ -117,3 +117,52 @@ rfs_patch_all() {
     ok "readonly_access_groups = lsiadmin"
   fi
 }
+
+# ---------- 端口参数化（payload 路径用）----------
+# payload 里的配置保留着占位符（nginx_default / LSA_Default），安装时按用户参数替换。
+# 若用户选的正好是默认值，结果与默认一致。
+rfs_apply_ports() {
+  local LSA="$RFS/opt/lsi/LSIStorageAuthority"
+  local CONF="$LSA/conf/LSA.conf" NGX="$LSA/server/conf/nginx.conf"
+  if [ "$DRY_RUN" = "1" ]; then
+    printf '%s  [dry-run] 把 %s 与 %s 里的端口占位符替换为 %s / %s%s\n' \
+      "$C_DIM" "$CONF" "$NGX" "$PORT" "$BACKEND_PORT" "$C_OFF"
+    return 0
+  fi
+  [ -f "$CONF" ] || die "缺少 $CONF"
+  [ -f "$NGX" ]  || die "缺少 $NGX"
+
+  local hits
+  hits=$(grep -oE 'nginx_default|LSA_Default' "$CONF" "$NGX" 2>/dev/null | wc -l)
+  if [ "$hits" -eq 0 ]; then
+    warn "配置里没有端口占位符，跳过替换（可能是已参数化过的 rootfs）"
+    return 0
+  fi
+  run sed -i "s/nginx_default/${PORT}/g; s/LSA_Default/${BACKEND_PORT}/g" "$CONF" "$NGX"
+  if [ "$DRY_RUN" != "1" ] && grep -qE 'nginx_default|LSA_Default' "$CONF" "$NGX"; then
+    die "端口占位符未清干净"
+  fi
+  ok "端口已写入：前端 $PORT / 后端 $BACKEND_PORT（替换 $hits 处）"
+}
+
+# ---------- 符号链接幂等校验（payload 里应已建好）----------
+rfs_verify_links() {
+  if [ "$DRY_RUN" = "1" ]; then
+    printf '%s  [dry-run] 校验 3 处库符号链接与前端 js 链接（缺失则重建）%s\n' "$C_DIM" "$C_OFF"
+    return 0
+  fi
+  local libdir="$RFS/usr/lib/x86_64-linux-gnu" bad=0
+  check_link() {   # check_link <链接> <目标> <说明>
+    local l="$1" t="$2" d="$3"
+    if [ -L "$l" ] && [ "$(readlink "$l")" = "$t" ] && [ -e "$l" ]; then return 0; fi
+    warn "符号链接缺失或指向不对：$d（修复中）"
+    ln -sfn "$t" "$l" 2>/dev/null || { err "无法重建 $l"; bad=1; }
+  }
+  check_link "$libdir/libcrypt.so.2"        "libcrypt.so.1"  "libcrypt soname"
+  check_link "$libdir/libldap-2.4.so.2"     "libldap.so.2"   "libldap 2.4 soname"
+  check_link "$RFS/opt/lsi/LSA/libs2/libslp.so.1" "libslp.so.1.0.0" "libslp"
+  if [ -d "$RFS/opt/lsi/LSIStorageAuthority/server/html/js" ]; then
+    check_link "$RFS/opt/lsi/LSIStorageAuthority/server/html/ui/js" "../js" "前端 js 目录"
+  fi
+  [ "$bad" -eq 0 ] && ok "库符号链接校验通过" || die "符号链接修复失败"
+}

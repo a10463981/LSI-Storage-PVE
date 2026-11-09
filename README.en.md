@@ -15,26 +15,24 @@ on a real PVE host has not been verified yet — see "Not yet verified" below.
 ## Quick start
 
 ```bash
-# 1. download and unpack (pin to a Release tag, not a raw main-branch link)
-wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.03/LSI-Storage-PVE-0.1.03.tar.gz
-wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.03/SHA256SUMS
+# 1. download and unpack (~66 MB, bundles the Ubuntu runtime + LSA)
+wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.04/LSI-Storage-PVE-0.1.04.tar.gz
+wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.04/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-tar xzf LSI-Storage-PVE-0.1.03.tar.gz && cd LSI-Storage-PVE-0.1.03
+tar xzf LSI-Storage-PVE-0.1.04.tar.gz && cd LSI-Storage-PVE-0.1.04
 
 # 2. health check first (read-only, changes nothing)
 sudo ./installer/install.sh doctor
 
-# 3. install (bring your own LSA package, see below)
-sudo ./installer/install.sh install --lsa-package /root/008.018.012.000_MR_7.38_LSA_Linux.zip
+# 3. install (offline, 1–2 minutes; no LSA package needed)
+sudo ./installer/install.sh install
 
-# 4. open http://<pve-host>:2463
-```
-
-Set a login password afterwards (LSA authenticates against system accounts):
-
-```bash
+# 4. set a login password, then open http://<pve-host>:2463
 sudo chroot /opt/lsi-storage/rootfs passwd lsiadmin
 ```
+
+**No network, no apt, no Docker, no host reboot.** The installer only unpacks the runtime,
+writes your ports, installs a systemd unit and starts it.
 
 ## Requirements
 
@@ -44,22 +42,33 @@ sudo chroot /opt/lsi-storage/rootfs passwd lsiadmin
 | Privileges | root |
 | Disk | ≥ 2 GB free on the filesystem holding `/opt` |
 | Ports | 2463 and 9000 free (change with `--port` / `--backend-port`) |
-| Network | reachable `mirrors.tuna.tsinghua.edu.cn`, or install offline with `--rootfs-file` |
 | Hardware | a MegaRAID card visible to the host. **Installs fine without one** — the console will just be empty |
-| Not needed | no apt, no Docker, no host reboot |
+| Not needed | no network, no LSA package, no apt, no Docker, no host reboot |
 
-## Where to get the LSA package
+## Why the tarball is 66 MB
 
-LSA is proprietary Broadcom software and is **not** redistributed here. You supply it:
+Because it **ships a ready-to-run environment**: Ubuntu 24.04 base + Broadcom LSA
+(the `gcc_8.3.x` baseline) + runtime dependencies, ~66 MB compressed, ~101 MB unpacked.
 
-- Typically named `008.018.012.000_MR_7.38_LSA_Linux.zip` (~166 MB)
-- Vendor support portals (Dell/HPE/Inspur/Huawei…) usually offer it without registration;
-  or Broadcom support → your card model → Management Software (account required)
-- It must contain the **`gcc_8.3.x`** baseline — builds against `gcc_14.2.x` require AVX and
-  fail with `CPU ISA level is lower than required` on virtual CPUs
+The alternative — ship only scripts and build on the target — means the target needs network
+access to a mirror, needs a 166 MB LSA installer you supply separately, and runs `apt-get`
+inside a chroot. Both paths fail more often on a PVE host. We chose "download once, install offline".
 
-If `--lsa-package` is missing, the installer stops at the preflight stage and prints this
-guidance instead of failing halfway.
+**The payload contains Broadcom's proprietary LSA binaries** (owned by Broadcom; Ubuntu by
+Canonical). It is meant for personal use on hardware you own; our own code is MIT.
+See "Notice and license" at the end.
+
+## Advanced: build from source with your own LSA package
+
+If you already have the LSA installer and the host has network access, skip the payload:
+
+```bash
+sudo ./installer/install.sh install --lsa-package /root/008.018.012.000_MR_7.38_LSA_Linux.zip
+```
+
+That path downloads the Ubuntu base, `apt-get install`s dependencies inside the chroot and
+`dpkg -i`s LSA — 10–20 minutes. The package must contain the **`gcc_8.3.x`** baseline;
+newer baselines require AVX and fail with `CPU ISA level is lower than required` on virtual CPUs.
 
 ## Subcommands
 
@@ -82,11 +91,10 @@ Options: `--lsa-package` `--rootfs-file` `--port` `--backend-port` `--prefix` `-
 
 Three steps:
 
-1. **Materialise a standalone Ubuntu 24.04 rootfs** (`ubuntu-base`, hard SHA256 check) at
-   `/opt/lsi-storage/rootfs`
-2. **Install LSA inside that chroot**: `apt-get install` the runtime dependencies, `dpkg -i`
-   the `gcc_8.3.x` debs, then apply compatibility patches (library symlinks, ports, log level,
-   a pre-created account)
+1. **Verify and unpack the runtime bundled in the tarball** (`payload/rootfs.tar.gz`, hard
+   SHA256 check) into `/opt/lsi-storage/rootfs` — no network, no apt
+2. **Write your ports**: the LSA configs inside the payload keep port placeholders, replaced at
+   install time with `--port` / `--backend-port`; then idempotently verify three library symlinks
 3. **Register `lsa-pve.service`**: `Type=oneshot` + `RemainAfterExit=yes` with
    `PrivateMounts=yes`, so systemd gives the unit its own mount namespace. Mounts die with the
    unit, which is why this tooling **never calls `umount`** and cannot touch the host's

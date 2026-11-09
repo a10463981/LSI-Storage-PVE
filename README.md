@@ -16,29 +16,24 @@
 ## 快速开始
 
 ```bash
-# 1. 下载并解压（建议固定到 Release 的 tag，不要用 main 分支的 raw 链接）
-wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.03/LSI-Storage-PVE-0.1.03.tar.gz
-wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.03/SHA256SUMS
+# 1. 下载并解压（约 66MB，内含 Ubuntu 运行环境与 LSA）
+wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.04/LSI-Storage-PVE-0.1.04.tar.gz
+wget https://github.com/a10463981/LSI-Storage-PVE/releases/download/v0.1.04/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-tar xzf LSI-Storage-PVE-0.1.03.tar.gz && cd LSI-Storage-PVE-0.1.03
+tar xzf LSI-Storage-PVE-0.1.04.tar.gz && cd LSI-Storage-PVE-0.1.04
 
-# 2. 先体检（只读，不改任何东西）
+# 2. 先体检（只读，零风险）
 sudo ./installer/install.sh doctor
 
-# 3. 再安装（LSA 包需自备，见下节）
-sudo ./installer/install.sh install --lsa-package /root/008.018.012.000_MR_7.38_LSA_Linux.zip
+# 3. 安装（离线，1–2 分钟；不需要另外准备 LSA 包）
+sudo ./installer/install.sh install
 
-# 4. 打开浏览器
-#    http://<PVE地址>:2463
-```
-
-装上后要设一个登录口令（LSA 用系统账号认证）：
-
-```bash
+# 4. 设登录口令，然后浏览器打开 http://<PVE地址>:2463
 sudo chroot /opt/lsi-storage/rootfs passwd lsiadmin
 ```
 
-然后浏览器用 `lsiadmin` + 刚设的口令登录。
+**全程不需要联网、不需要 apt、不需要 Docker、不需要重启宿主机。**
+安装器只做四件事：校验并解包运行环境 → 按参数写端口 → 装 systemd 单元 → 启动。
 
 ## 前置条件
 
@@ -48,20 +43,32 @@ sudo chroot /opt/lsi-storage/rootfs passwd lsiadmin
 | 权限 | root |
 | 磁盘 | `/opt` 所在分区 ≥ 2 GB 空闲 |
 | 端口 | 2463 与 9000 空闲（可用 `--port` / `--backend-port` 改） |
-| 网络 | 能访问 `mirrors.tuna.tsinghua.edu.cn`（或用 `--rootfs-file` 离线安装） |
 | 硬件 | MegaRAID 卡直通/在位。**没有卡也能装**，只是界面里列表为空 |
-| **不需要** | 不需要 apt、不需要 Docker、不需要重启宿主机 |
+| **不需要** | 不需要联网、不需要 LSA 包、不需要 apt、不需要 Docker、不需要重启宿主机 |
 
-## LSA 安装包从哪里来
+## 为什么包这么大（66 MB）
 
-LSA 是 Broadcom 的专有软件，**不随本项目分发**，需要你自己获取：
+因为**发行包里直接带了一份装好的运行环境**：Ubuntu 24.04 base + Broadcom LSA
+（`gcc_8.3.x` 基线）+ 运行期依赖，压缩后约 66 MB，解包后约 101 MB。
 
-- 文件名通常形如 `008.018.012.000_MR_7.38_LSA_Linux.zip`（约 166 MB）
-- 获取途径：服务器厂商支持页搜 "LSI Storage Authority"（多数不需要注册）；
-  或 Broadcom 支持站 → 你的卡型号 → Management Software（需要注册账号）
-- 必须包含 **`gcc_8.3.x` 基线**（无 AVX 的虚拟 CPU 只能用这个基线，用 14.2.x 会 `CPU ISA level is lower`）
+另一种做法是只带安装脚本、让目标机现装（下载 Ubuntu base、在 chroot 里 `apt-get`、
+`dpkg -i` LSA）。那样包只有几十 KB，但要求目标机联网到镜像站、还要你另外准备 166MB 的
+LSA 安装包——在 PVE 上这两种失败率都不低。我们选了「一次下载、离线安装」。
 
-不提供 `--lsa-package` 时，安装会停在预检阶段并打印上面的指引，不会半路失败。
+**包里包含 Broadcom LSA 的专有二进制**（版权归 Broadcom，Ubuntu 归 Canonical），
+仅面向个人在自己硬件上使用的场景；本项目的代码部分是 MIT。详见文末「声明与许可」。
+
+## 高级：自备 LSA 包从源码现装
+
+如果你已经有 LSA 安装包、机器也能联网，可以跳过 payload 走构建路径：
+
+```bash
+sudo ./installer/install.sh install --lsa-package /root/008.018.012.000_MR_7.38_LSA_Linux.zip
+```
+
+这条路会下载 Ubuntu base、在 chroot 内 `apt-get` 装依赖、`dpkg -i` 装 LSA，
+耗时 10–20 分钟。LSA 包必须包含 **`gcc_8.3.x`** 基线（高版本基线要求 AVX，
+虚拟 CPU 会报 `CPU ISA level is lower than required`）。
 
 ## 子命令
 
@@ -121,10 +128,10 @@ install.sh repair                白名单修复
 
 安装脚本做三件事：
 
-1. **准备一个独立的 Ubuntu 24.04 根文件系统**（`ubuntu-base`，SHA256 硬校验），
-   解到 `/opt/lsi-storage/rootfs`
-2. **在这个 chroot 里装 LSA**：先 `apt-get install` 运行期依赖，再 `dpkg -i` LSA 的
-   `gcc_8.3.x` 基线 deb，然后打兼容性补丁（库符号链接、端口、日志级别、预置账号）
+1. **校验并解包发行包里的运行环境**（`payload/rootfs.tar.gz`，SHA256 硬校验）到
+   `/opt/lsi-storage/rootfs` —— 这一步不联网、不执行 apt
+2. **按参数写入端口**：rootfs 里的 LSA 配置保留着端口占位符，安装时替换成
+   `--port` / `--backend-port` 指定的值；再幂等校验三处库符号链接
 3. **注册 `lsa-pve.service`**：`Type=oneshot` + `RemainAfterExit=yes`，用
    `PrivateMounts=yes` 让 systemd 为这个单元建私有挂载命名空间 —— 挂载随单元销毁，
    所以本工具**从不执行 `umount`**，不可能误伤宿主的 `/dev /proc /sys`
@@ -159,13 +166,16 @@ scripts/sync-core.sh --check --from /path/to/LSI-Storage-Fnos   # CI 门禁
 
 以下是**必须在真实 PVE 上验一遍**才能打勾的：
 
-1. 全新 PVE 上的完整安装（当前只在 Debian 12 构建机上跑过 `doctor` 与 `--dry-run`）
+1. 全新 PVE 上的完整安装（当前只在 Debian 12 构建机上跑过 `doctor` 与 `--dry-run`；
+   payload 的冒烟测试也尚未在构建机上通过——见下）
 2. `--port` 参数化后 LSA 前端是否真的改到指定端口（8 处占位符是否覆盖全部引用）
 3. `upgrade` 的 rootfs 原子替换与 `rollback`
 4. `uninstall --purge` 的零残留断言
 5. 有卡环境下的控制器枚举、虚拟盘/物理盘状态、重建进度
 6. `readonly_access_groups` 是否真的拦住写操作
 7. PVE 8.x / Debian 12 与 PVE 7.2 / Debian 11 的差异
+8. payload 解包后 LSA 能否在真实 PVE 上起到 API 200（`gcc_8.3.x` 基线在 Intel/AMD 实机上的表现）
+9. 端口参数化：`--port 8080` 后 LSA 前端是否真的监听 8080
 
 ## 声明与许可
 
