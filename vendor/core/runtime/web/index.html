@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAID 监控</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --line:#262b36; --txt:#e6e9ef; --dim:#8b93a7;
+  --ok:#2f9e44; --warn:#e8590c; --crit:#c92a2a; --info:#1971c2; --unk:#868e96;
+  --radius:10px;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f4f6f9; --panel:#fff; --line:#e2e6ee; --txt:#1b1f27; --dim:#6b7382; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:40px 20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:24px}
+h1{margin:0 0 4px;font-size:20px;font-weight:600}
+.sub{color:var(--dim);font-size:13px;margin-bottom:24px}
+.banner{border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13.5px;line-height:1.55;
+  border:1px solid transparent}
+.banner.warn{background:rgba(232,89,12,.10);border-color:rgba(232,89,12,.35);color:#f08c4a}
+.banner.info{background:rgba(25,113,194,.10);border-color:rgba(25,113,194,.35);color:#4d9fe0}
+.banner.crit{background:rgba(201,42,42,.10);border-color:rgba(201,42,42,.35);color:#e06c6c}
+@media (prefers-color-scheme: light){
+  .banner.warn{color:#b8470c}.banner.info{color:#1361a8}.banner.crit{color:#a32222}
+}
+.steps{list-style:none;padding:0;margin:0 0 22px}
+.steps li{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14px;
+  border-bottom:1px solid var(--line)}
+.steps li:last-child{border-bottom:0}
+.dot{width:18px;height:18px;border-radius:50%;flex:0 0 18px;display:grid;place-items:center;
+  font-size:11px;border:1.5px solid var(--line);color:var(--dim)}
+.dot.done{background:var(--ok);border-color:var(--ok);color:#fff}
+.dot.run{border-color:var(--info);color:var(--info);animation:pulse 1.4s ease-in-out infinite}
+.dot.fail{background:var(--crit);border-color:var(--crit);color:#fff}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.steps li span.t{color:var(--dim);margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--dim);
+  border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
+.meta b{color:var(--txt);font-weight:500;font-variant-numeric:tabular-nums}
+.btn{display:inline-block;padding:10px 20px;border-radius:8px;text-decoration:none;
+  font-weight:500;font-size:14px;border:1px solid var(--line);color:var(--txt);background:transparent;
+  cursor:pointer}
+.btn.primary{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.primary:hover{filter:brightness(1.1)}
+.actions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+details{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+summary{cursor:pointer;color:var(--dim);font-size:13px}
+details pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px;
+  overflow:auto;font-size:12px;line-height:1.7;color:var(--dim)}
+.foot{color:var(--dim);font-size:12px;margin-top:16px;text-align:center}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;
+  border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+
+.opsrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.btn{display:inline-block;border:1px solid var(--line);background:#1f242e;color:var(--txt);
+     text-decoration:none;padding:9px 18px;border-radius:8px;font-size:13.5px;cursor:pointer}
+.btn:hover{filter:brightness(1.15)}
+.btn.danger{background:#3a1d1d;border-color:#7d2b28;color:#ffb4ae}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.chk{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:flex-start}
+.chk:last-child{border-bottom:0}
+.chk .st{flex:0 0 44px;font-size:11.5px;font-weight:600;text-align:center;border-radius:5px;padding:2px 0}
+.chk .st.ok{background:rgba(63,185,80,.15);color:#3fb950}
+.chk .st.warn{background:rgba(210,153,34,.15);color:#d29922}
+.chk .st.fail{background:rgba(248,81,73,.15);color:#f85149}
+.chk .body{flex:1;min-width:0}
+.chk .nm{font-weight:600;color:#fff}
+.chk .dt{color:var(--dim);font-size:12.5px}
+.chk .fx{color:#4d9fe0;font-size:12px}
+</style>
+</head>
+<body>
+<noscript>
+  <div class="wrap">
+    <div class="card">
+      <h1>MegaRAID 监控</h1>
+      <div class="sub">浏览器未启用 JavaScript</div>
+      <div class="banner warn">
+        本页需要 JavaScript 才能显示实时进度。请允许本页运行脚本，或直接访问
+        <a href="enter">/enter</a>（就绪后会自动跳转到管理界面）。
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="enter">直接进入管理界面</a>
+        <a class="btn" href="status">查看状态 JSON</a>
+      </div>
+    </div>
+  </div>
+</noscript>
+<div class="wrap">
+  <h1>MegaRAID 监控</h1>
+  <div class="sub">Broadcom LSI Storage Authority · 本机运行</div>
+
+  <div class="card">
+    <div id="banner"></div>
+
+    <ul class="steps" id="steps">
+      <li data-step="STARTING"><span class="dot" id="d-start">1</span>启动管理服务<span class="t" id="t-start"></span></li>
+      <li data-step="WARMING"><span class="dot" id="d-warm">2</span>等待 LSA 初始化<span class="t" id="t-warm"></span></li>
+      <li data-step="READY"><span class="dot" id="d-ready">3</span>就绪，可进入管理界面<span class="t" id="t-ready"></span></li>
+    </ul>
+
+    <div class="meta">
+      <div>已用时间 <b id="elapsed">0 秒</b></div>
+      <div>接口状态 <b id="code">—</b></div>
+      <div>监听端口 <b id="port">—</b></div>
+    </div>
+
+    <div class="actions" id="actions"></div>
+
+    <details>
+      <summary>排查信息（只读）</summary>
+      <pre id="diag">加载中…</pre>
+      <div style="margin-top:10px;font-size:12.5px;color:var(--dim)">
+        如果长时间停在第 2 步，常见原因：本机可用内存不足（LSA 需要数百 MB）；阵列正在重建，
+        控制器响应变慢；或上一次停止没有完全退出。可尝试在应用管理里先停止再启动一次。
+      </div>
+    </details>
+
+    <div class="foot" id="foot"></div>
+  </div>
+
+  <div class="card">
+    <h2>运维操作</h2>
+    <div class="opsrow">
+      <button class="btn danger" id="btn-restart">重启管理服务</button>
+      <button class="btn" id="btn-check">重新检测环境</button>
+      <span class="badge" id="ops-status"></span>
+    </div>
+    <div id="check-result"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var last = null, entered = false, restartAsked = false;
+
+  function fmt(s){
+    if (s < 60) return s + ' 秒';
+    var m = Math.floor(s/60), r = s%60;
+    return m + ' 分 ' + r + ' 秒';
+  }
+  function el(id){ return document.getElementById(id); }
+
+  function setDot(id, cls, ch){
+    var d = el(id); if(!d) return;
+    d.className = 'dot' + (cls ? ' ' + cls : '');
+    d.textContent = ch;
+  }
+
+  function render(st){
+    var phase = st.phase;
+
+    // 横幅
+    var b = el('banner'), html = '';
+    if (!st.has_card){
+      html += '<div class="banner warn"><b>本机未检测到 MegaRAID 控制器。</b><br>' +
+              '管理界面可以打开，但控制器列表会是空的。常见原因：RAID 卡在虚拟化宿主上而' +
+              '没有整卡直通给这台系统；或者驱动 megaraid_sas 未加载。</div>';
+    }
+    if (phase === 'FAILED'){
+      html += '<div class="banner crit"><b>管理服务未能启动。</b> ' + (st.message||'') + '</div>';
+    } else if (st.elapsed_s > 600 && phase !== 'READY'){
+      html += '<div class="banner info"><b>已等待超过 10 分钟。</b>' +
+              'LSA 初始化通常需要 1~6 分钟；超过 10 分钟建议检查内存占用，' +
+              '或在应用管理里停止后重新启动。</div>';
+    }
+    b.innerHTML = html;
+
+    // 步骤
+    var idx = {STARTING:0, WARMING:1, READY:2, FAILED:0}[phase] || 0;
+    setDot('d-start', idx>0?'done':(phase==='FAILED'?'fail':'run'), idx>0?'✓':(phase==='FAILED'?'✕':'…'));
+    setDot('d-warm',  idx>1?'done':(idx===1?'run':''),        idx>1?'✓':(idx===1?'…':'2'));
+    setDot('d-ready', idx>2?'done':(idx===2?'done':''),       idx===2?'✓':'3');
+    el('t-start').textContent = idx>0 ? '完成' : (phase==='FAILED'?'失败':'进行中');
+    el('t-warm').textContent  = idx>1 ? '完成' : (idx===1?'进行中':'');
+    el('t-ready').textContent = idx===2 ? '完成' : '';
+
+    el('elapsed').textContent = fmt(st.elapsed_s);
+    el('code').textContent    = st.http_code === null ? '连接失败' : ('HTTP ' + st.http_code);
+    el('port').textContent    = st.front_port;
+
+    // 动作区
+    var a = el('actions');
+    if (phase === 'READY'){
+      // 手动进入：不自动跳转、不倒计时。href 指向 /enter，服务端按请求 Host 头
+      // 302 到 http://<host>:2464/（host 取自请求，不写死 127.0.0.1）。
+      a.innerHTML = '<a class="btn primary" href="enter">进入 RAID 管理界面</a>';
+      entered = true;
+    } else if (phase === 'FAILED'){
+      a.innerHTML = '<a class="btn" href="">重新检测</a>' +
+                    '<span class="badge">如持续失败，请在应用管理中停止后重新启动</span>';
+    } else {
+      a.innerHTML = '<span class="badge">就绪后会出现「进入 RAID 管理界面」按钮（本页不会自动跳转）</span>';
+    }
+
+    // 重启状态反馈
+    var rb = el('btn-restart'), rs = el('ops-status');
+    if (rb && rs){
+      if (st.restarting){
+        rb.disabled = true;
+        rs.textContent = '正在重启 → 预热中 → 就绪…';
+      } else {
+        rb.disabled = false;
+        if (restartAsked){
+          if (st.phase === 'READY') { rs.textContent = '已就绪，可点击「进入 RAID 管理界面」'; restartAsked = false; }
+          else { rs.textContent = '服务已重启，正在预热（' + st.phase + '）…'; }
+        }
+      }
+    }
+
+    el('diag').textContent = JSON.stringify(st, null, 2);
+    el('foot').textContent = '首次进入需要登录：账号 lsiadmin，密码在安装完成时由应用提供。';
+  }
+
+  function tick(){
+    fetch('status', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(st){
+        last = st;
+        render(st);
+      })
+      .catch(function(){
+        el('code').textContent = '门户服务异常';
+      });
+  }
+
+  // 状态轮询：平时就绪即停（页面完全静止）；重启期间继续跑，等 READY 再停。
+  var polling = false;
+  function startPoll(){
+    if (polling) return;
+    polling = true;
+    (function loop(){
+      if (!polling) return;
+      fetch('status', {cache:'no-store'})
+        .then(function(r){ return r.json(); })
+        .then(function(st){
+          last = st; render(st);
+          var busy = st.restarting || st.phase !== 'READY';
+          if (!busy){ polling = false; return; }       // 就绪且没在重启 → 停
+          setTimeout(loop, 2000);
+        })
+        .catch(function(){ el('code').textContent = '门户服务异常'; setTimeout(loop, 3000); });
+    })();
+  }
+  startPoll();
+
+  // ---------- 环境检测 ----------
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function renderCheck(res){
+    if (!res || !res.items){ el('check-result').innerHTML = '<div class="hint">检测失败</div>'; return; }
+    var sum = res.summary || {};
+    var head = '<div class="hint" style="margin:10px 0 6px">通过 <b style="color:#3fb950">' + (sum.ok||0) +
+               '</b> · 警告 <b style="color:#d29922">' + (sum.warn||0) +
+               '</b> · 失败 <b style="color:#f85149">' + (sum.fail||0) + '</b></div>';
+    el('check-result').innerHTML = head + res.items.map(function(it){
+      return '<div class="chk"><span class="st ' + it.status + '">' +
+             ({ok:'通过',warn:'警告',fail:'失败'}[it.status] || it.status) + '</span>' +
+             '<div class="body"><div class="nm">' + esc(it.name) + '</div>' +
+             '<div class="dt">' + esc(it.detail) + '</div>' +
+             (it.fix ? '<div class="fx">建议：' + esc(it.fix) + '</div>' : '') + '</div></div>';
+    }).join('');
+  }
+  function runCheck(){
+    var b = el('btn-check');
+    b.disabled = true;
+    el('ops-status').textContent = '检测中…';
+    fetch('op/check', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(res){ renderCheck(res); el('ops-status').textContent = '检测完成'; })
+      .catch(function(){ el('ops-status').textContent = '检测失败'; })
+      .then(function(){ b.disabled = false; });
+  }
+  el('btn-check').addEventListener('click', runCheck);
+
+  // ---------- 重启 ----------
+  el('btn-restart').addEventListener('click', function(){
+    if (!confirm('确定重启管理服务？\n\n重启期间正在看的 RAID 界面会中断，约 15–30 秒后恢复。\n阵列本身不受影响。')) return;
+    var b = el('btn-restart');
+    b.disabled = true;
+    el('ops-status').textContent = '已发送重启请求…';
+    fetch('op/restart', {method:'POST', body:''})
+      .then(function(r){ return r.json().then(function(j){ return {code:r.status, body:j}; }); })
+      .then(function(x){
+        if (x.code === 409){ el('ops-status').textContent = '正在重启中，请等待完成'; }
+        else { el('ops-status').textContent = '正在重启 → 预热中 → 就绪…'; restartAsked = true; }
+        startPoll();
+      })
+      .catch(function(){
+        el('ops-status').textContent = '服务正在重启（连接暂时中断），稍候自动恢复…';
+        setTimeout(startPoll, 3000);
+      });
+  });
+
+  // 页面加载时先跑一次检测
+  runCheck();
+})();
+</script>
+</body>
+</html>

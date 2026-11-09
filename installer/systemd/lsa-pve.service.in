@@ -1,0 +1,32 @@
+[Unit]
+Description=Broadcom LSI Storage Authority (chroot @ @PREFIX@)
+Documentation=file://@PREFIX@/rootfs/opt/lsi/LSIStorageAuthority
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# PrivateMounts 让 systemd 为本 unit 建一个私有挂载命名空间：
+# ExecStartPre 里做的 rbind 会一直保留给 ExecStart/ExecStop 使用，
+# unit 停止时整个命名空间销毁 —— 因此本 unit **不需要也不执行任何 umount**，
+# 更不会有 umount -R 碰到宿主 /dev /proc /sys 的可能。
+PrivateMounts=yes
+MountFlags=slave
+
+ExecStartPre=-/bin/mount --rbind /dev  @RFS@/dev
+ExecStartPre=-/bin/mount --rbind /proc @RFS@/proc
+ExecStartPre=-/bin/mount --rbind /sys  @RFS@/sys
+ExecStartPre=-/bin/mount -t tmpfs tmpfs @RFS@/dev/shm
+
+ExecStart=/usr/sbin/chroot @RFS@ /etc/init.d/LsiSASH start
+ExecStop=/usr/sbin/chroot @RFS@ /etc/init.d/LsiSASH stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+# 只读加固：LSA 本身需要写自己的日志目录，所以不加 ProtectSystem=strict
+NoNewPrivileges=no
+
+[Install]
+WantedBy=multi-user.target

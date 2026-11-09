@@ -1,0 +1,18 @@
+# vendor/core 是同步快照，允许提交；但其中不应出现构建产物
+vendor/core/build/work/
+vendor/core/build/dist/
+vendor/core/build/vendor/
+vendor/core/build/logo-src/
+__pycache__/
+*.pyc
+
+# 本地构建与运行产物
+build/
+dist/
+*.tar.gz
+*.fpk
+release/
+
+# 测试与临时
+tmp/
+*.log
