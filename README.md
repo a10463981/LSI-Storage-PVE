@@ -2,6 +2,9 @@
 
 [English](README.en.md) | 中文
 
+GitHub: https://github.com/a10463981/LSI-Storage-PVE ｜ Gitee: https://gitee.com/a10463981/LSI-Storage-PVE
+
+
 在 **PVE（Debian 11/12）宿主机**上装出一套可视化的 Broadcom LSI Storage Authority（LSA），
 浏览器打开 `http://<PVE地址>:2463` 就能看 MegaRAID 阵列卡的状态。
 

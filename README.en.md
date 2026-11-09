@@ -2,6 +2,9 @@
 
 English | [中文](README.md)
 
+GitHub: https://github.com/a10463981/LSI-Storage-PVE ｜ Gitee: https://gitee.com/a10463981/LSI-Storage-PVE
+
+
 Run the full Broadcom LSI Storage Authority (LSA) console on a **Proxmox VE host (Debian 11/12)**.
 Open `http://<pve-host>:2463` and watch your MegaRAID array. No storcli, no Docker, no host
 reboot, and nothing installed into the host's package set.
